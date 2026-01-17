@@ -15,38 +15,29 @@ CATEGORIES_FILE = 'categories.pkl'
 
 # --- 1. Load Data ---
 try:
+    # Use a relative path or ensure the file exists in the directory for portability
     df = pd.read_csv("D:\\soilproject\\dataset\\data_core.csv")
     print("Data loaded successfully.")
 except FileNotFoundError:
-    print("Error: 'data_core.csv' not found. Please ensure the file is in the correct directory.")
+    print("Error: 'data_core.csv' not found.")
     exit()
 
-# Rename columns for simpler access
 df.columns = df.columns.str.strip().str.replace(' ', '_')
 
-# --- 2. Data Preprocessing and Feature Engineering ---
+# --- 2. Preprocessing ---
 X = df.drop('Fertilizer_Name', axis=1)
 y_raw = df['Fertilizer_Name']
 
-# 2a. Encode the target variable (Fertilizer Name)
 label_encoder = LabelEncoder()
 y = label_encoder.fit_transform(y_raw)
 target_names = label_encoder.classes_
 
-print(f"\nUnique Fertilizer Types: {target_names}")
-print(f"Total samples: {len(df)}")
-
-# 2b. Define features
 numerical_features = ['Temparature', 'Humidity', 'Moisture', 'Nitrogen', 'Potassium', 'Phosphorous']
 categorical_features = ['Soil_Type', 'Crop_Type']
 
-# Extract unique categories for Flask App
 soil_types = df['Soil_Type'].unique().tolist()
 crop_types = df['Crop_Type'].unique().tolist()
-print(f"Unique Soil Types: {soil_types}")
-print(f"Unique Crop Types: {crop_types}")
 
-# 2c. Create a preprocessing pipeline
 preprocessor = ColumnTransformer(
     transformers=[
         ('num', StandardScaler(), numerical_features),
@@ -57,16 +48,10 @@ preprocessor = ColumnTransformer(
 
 # --- 3. Split Data ---
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-print(f"Training set size: {len(X_train)} samples")
-print(f"Testing set size: {len(X_test)} samples")
 
+# --- 4. Model Selection with Size Constraints ---
+print("\nStarting Hyperparameter Tuning with Size Constraints...")
 
-# --- 4. Model Selection and Hyperparameter Tuning ---
-best_model = None
-best_accuracy = 0.0
-best_model_name = ""
-
-# Define models and their hyperparameter grids
 models_to_tune = {
     'RandomForest': {
         'model': RandomForestClassifier(random_state=42, class_weight='balanced'),
@@ -87,72 +72,42 @@ models_to_tune = {
     }
 }
 
-print("\nStarting Hyperparameter Tuning and Model Comparison...")
+best_model = None
+best_accuracy = 0.0
+best_model_name = ""
 
 for name, config in models_to_tune.items():
     print(f"\n--- Tuning {name} ---")
-
-    # Create a pipeline specific to the current model
     pipeline = Pipeline(steps=[
         ('preprocessor', preprocessor),
         ('classifier', config['model'])
     ])
 
-    # Use GridSearchCV for hyperparameter optimization
     grid_search = GridSearchCV(
         estimator=pipeline,
         param_grid=config['param_grid'],
-        cv=5, # 5-fold cross-validation
+        cv=5,
         scoring='accuracy',
         n_jobs=-1,
         verbose=1
     )
 
     grid_search.fit(X_train, y_train)
-
-    # Evaluate the best model found by the grid search on the test set
     tuned_pipeline = grid_search.best_estimator_
-    y_pred = tuned_pipeline.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
+    accuracy = accuracy_score(y_test, tuned_pipeline.predict(X_test))
 
-    print(f"\n{name} Best Parameters: {grid_search.best_params_}")
+    print(f"{name} Best Params: {grid_search.best_params_}")
     print(f"{name} Test Accuracy: {accuracy:.4f}")
 
-    # Check if this is the best model so far
     if accuracy > best_accuracy:
         best_accuracy = accuracy
         best_model = tuned_pipeline
         best_model_name = name
-        print(f"*** {name} is the new best model! ***")
 
-
-# --- 5. Final Evaluation and Conclusion ---
-print("\n--- Model Selection Complete ---")
-print(f"The best performing model is: {best_model_name} with an Accuracy of {best_accuracy:.4f}")
-
-if best_accuracy > 0.90:
-    print("\n✅ Success! Target accuracy of >90% achieved!")
-else:
-    print(f"\n⚠️ Target accuracy of >90% not met. Current best is {best_accuracy:.4f}. More data or feature engineering may be required.")
-
-# Print detailed report for the best model
-y_pred_final = best_model.predict(X_test)
-print("\nClassification Report for the Best Model:")
-print(classification_report(y_test, y_pred_final, target_names=target_names))
-
-
-# --- 6. Save Best Model and Encoder ---
+# --- 5. Save Model (Using Compression) ---
 # Using compress=3 reduces file size by another 20-40%
 joblib.dump(best_model, MODEL_FILE, compress=3) 
 joblib.dump(label_encoder, ENCODER_FILE)
+joblib.dump({'soil_types': soil_types, 'crop_types': crop_types}, CATEGORIES_FILE)
 
-# Save categories for the Flask App
-categories_data = {
-    'soil_types': soil_types,
-    'crop_types': crop_types
-}
-joblib.dump(categories_data, CATEGORIES_FILE)
-
-print(f"\nBest Model ({best_model_name}) saved to: {MODEL_FILE}")
-print(f"Label Encoder saved to: {ENCODER_FILE}")
-print(f"Categories saved to: {CATEGORIES_FILE}")
+print(f"\nSaved optimized {best_model_name} to {MODEL_FILE}")
