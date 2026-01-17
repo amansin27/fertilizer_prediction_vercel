@@ -71,16 +71,17 @@ models_to_tune = {
     'RandomForest': {
         'model': RandomForestClassifier(random_state=42, class_weight='balanced'),
         'param_grid': {
-            'classifier__n_estimators': [100, 200, 300],
-            'classifier__max_depth': [10, 20, None],
-            'classifier__min_samples_split': [2, 5],
+            # Reducing estimators and depth significantly shrinks the .pkl file size
+            'classifier__n_estimators': [50, 80], 
+            'classifier__max_depth': [10, 15],
+            'classifier__min_samples_leaf': [2, 4], 
         }
     },
     'GradientBoosting': {
         'model': GradientBoostingClassifier(random_state=42),
         'param_grid': {
-            'classifier__n_estimators': [100, 200],
-            'classifier__learning_rate': [0.05, 0.1, 0.2],
+            'classifier__n_estimators': [50, 100],
+            'classifier__learning_rate': [0.1],
             'classifier__max_depth': [3, 5],
         }
     }
@@ -141,7 +142,8 @@ print(classification_report(y_test, y_pred_final, target_names=target_names))
 
 
 # --- 6. Save Best Model and Encoder ---
-joblib.dump(best_model, MODEL_FILE)
+# Using compress=3 reduces file size by another 20-40%
+joblib.dump(best_model, MODEL_FILE, compress=3) 
 joblib.dump(label_encoder, ENCODER_FILE)
 
 # Save categories for the Flask App
